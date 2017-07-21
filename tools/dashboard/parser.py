@@ -10,7 +10,7 @@ SET_DATA_JS_TEMPLATE = './template/case_data_template.js'
 GAUGE_JS_TEMPLATE = './template/overall_progress_template.js'
 THEME_TEMPLATE = './template/theme.js'
 SET_CONFIG = './set_config.json'
-BUILD_DIR = './output'
+BUILD_DIR = './'
 JS_DIR = os.path.join(BUILD_DIR,'js')
 BROWSER_SET = ['firefox', 'chrome']
 MACHINE_SET = ['windows8-64', 'windows10-64']
@@ -19,6 +19,7 @@ class Parser(object):
     def __init__(self, **kwargs):
         self.hasal_ds = dict()
         self.count_ds = dict()
+        self.set_page_dict = dict()
         self.suites = list()
         self.browsers = list()
         self.machines = list()
@@ -33,6 +34,9 @@ class Parser(object):
             os.makedirs(JS_DIR)
 
     def setup_ds(self):
+        for m in MACHINE_SET:
+            self.set_page_dict[m] = {}
+
         with open('hasal_data.csv') as f:
             r = csv.DictReader(f)
             for row in r:
@@ -128,8 +132,10 @@ class Parser(object):
             outfile.write('\t\t\t\t\t</tr>\n')
 
     def create_set_html(self, machine, set_name):
-        create_set_html = os.path.join(BUILD_DIR, '{}_{}_set.html'.format(set_name, machine))
-        with open(create_set_html, 'w') as outfile, open(SET_HTML_TEMPLATE, 'r') as infile:
+        set_html_file = '{}_{}_set.html'.format(set_name, machine)
+        set_html_dir = os.path.join(BUILD_DIR, set_html_file)
+        self.set_page_dict[machine][set_name] = set_html_file
+        with open(set_html_dir, 'w') as outfile, open(SET_HTML_TEMPLATE, 'r') as infile:
             for row in infile:
                 if '{{TITLE_NAME}}' in row:
                     outfile.write(row.replace('{{TITLE_NAME}}', 'Hasal_{}_{}'.format(set_name, machine)))
@@ -146,7 +152,10 @@ class Parser(object):
                         outfile.write('\t<script language="JavaScript" src="./js/{}_gauge.js"></script>\n'.format(m[:-3]))
                         outfile.write('\t<script language="JavaScript">$(function() {{$(\'#container-{}\').highcharts({}_gauge_data);}});</script>\n'.format(m[:-3],m[:-3]))
                 elif '{{TIME}}' in row:
-                    outfile.write(row.replace('{{TIME}}',datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    time = self.ref_date
+                    latest_date = datetime.datetime.strptime(time, "%Y-%m-%d %H-%M-%S-000000").strftime("%Y-%m-%d %H:%M:%S")
+                    outfile.write(row.replace('{{TIME}}','Latest_data: {}  Refresh: {}'.format(latest_date,now)))
                 elif '<!--SUITE PROGRESS GOES HERE-->' in row:
                     self.render_table(machine, set_name, outfile)
                 else:
@@ -207,10 +216,33 @@ class Parser(object):
                 self.create_case_data_js(m, set_name)
                 self.create_gauge_js(m)
 
+    def create_index(self):
+        index_out = os.path.join(BUILD_DIR,'index.html')
+        index_template = './template/index.html'
+        with open(index_out, 'w') as outfile, open(index_template, 'r') as infile:
+            for row in infile:
+                if '<!--windows8-64 here-->' in row:
+                    outfile.write('\t<h1>windows8</h1>\n')
+                    outfile.write('\t<table>\n')
+                    m = 'windows8-64'
+                    for set in self.set_page_dict[m].keys():
+                        outfile.write('\t<tr><td><a href="{}">{} on {}</a></td></tr>\n'.format(self.set_page_dict[m][set],set,m))
+                    outfile.write('\t</table>\n')
+                elif '<!--windows10-64 here-->' in row:
+                    outfile.write('\t<h1>windows10</h1>\n')
+                    outfile.write('\t<table>\n')
+                    m = 'windows10-64'
+                    for set in self.set_page_dict[m].keys():
+                        outfile.write('\t\t<tr><td><a href="{}">{} on {}</a></td></tr>\n'.format(self.set_page_dict[m][set],set,m))
+                    outfile.write('\t</table>\n')
+                else:
+                    outfile.write(row)
+
     def run(self):
         self.setup_ds()
         self.get_ref_date()
         self.create_pages()
+        self.create_index()
 
 def create_db():
     cmd = 'python ../query_data_from_perfherder.py > tmp.txt'
